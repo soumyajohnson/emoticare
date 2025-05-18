@@ -1,7 +1,7 @@
 from openai import OpenAI
 
 # Insert your API key here
-client = OpenAI(api_key="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")
+client = OpenAI(api_key="your-openai-api-key")
 
 def chat_with_gpt(user_input):
     system_prompt = """
