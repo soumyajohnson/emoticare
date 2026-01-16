@@ -1,33 +1,36 @@
-from flask import Flask, request, jsonify
+from flask import Flask
 from flask_cors import CORS
-from ai_modules.gpt_helper import chat_with_gpt
-from ai_modules.sentiment import analyze_sentiment
+from server.config import Config
+from server.extensions import bcrypt, jwt, limiter
+from server.models import db
+from server.routes.auth import auth_bp
+from server.routes.chat import chat_bp
+from server.routes.privacy import privacy_bp
 
-# Create the app
-app = Flask(__name__)
+def create_app(config_class=Config):
+    app = Flask(__name__)
+    app.config.from_object(config_class)
 
-# Enable CORS for all routes and origins (frontend communication)
-CORS(app, resources={r"/*": {"origins": "*"}})
+    # Initialize Extensions
+    bcrypt.init_app(app)
+    jwt.init_app(app)
+    db.init_app(app)
+    limiter.init_app(app)
+    
+    # CORS: Allow frontend (e.g., localhost:3000)
+    CORS(app, resources={r"/*": {"origins": ["http://localhost:3000"]}}, supports_credentials=True)
 
-@app.route('/analyze', methods=['POST'])
-def analyze():
-    try:
-        data = request.get_json()
-        user_input = data.get('text', '')
+    # Register Blueprints
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(chat_bp)
+    app.register_blueprint(privacy_bp)
 
-        # Run sentiment analysis (optional)
-        sentiment = analyze_sentiment(user_input)
+    @app.route('/')
+    def index():
+        return "EmotiCare API Secure is Running"
 
-        # Get GPT response
-        gpt_response = chat_with_gpt(user_input)
-
-        return jsonify({
-            'response': gpt_response,
-            'sentiment': sentiment
-        })
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    return app
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000)
+    app = create_app()
+    app.run(host='0.0.0.0', port=8000, debug=True)

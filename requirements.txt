@@ -8,7 +8,6 @@ cryptography==41.0.7
 python-dotenv==1.0.0
 flask-limiter==3.5.0
 requests==2.31.0
-google-generativeai==0.3.2
 textblob==0.17.1
 mongoengine==0.27.0
 pymongo<4.0.0
