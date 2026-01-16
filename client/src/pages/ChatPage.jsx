@@ -2,52 +2,91 @@ import React, { useState, useEffect } from 'react';
 import { useSocketChat } from '../hooks/useSocketChat';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from '../hooks/useSpeechSynthesis';
+import { useConversations } from '../hooks/useConversations';
+import { useAuth } from '../auth/AuthProvider';
 import { VoiceOrb } from '../components/VoiceOrb';
 import { TranscriptPanel } from '../components/TranscriptPanel';
 import { ControlDock } from '../components/ControlDock';
-import { useAuth } from '../auth/AuthProvider'; // Import Auth
-import { LogOut, User } from 'lucide-react';
-import api from '../lib/api'; // Use the configured api
+import { Sidebar } from '../components/Sidebar';
+import { LogOut, User, Menu } from 'lucide-react';
+import api from '../lib/api';
 
 export const ChatPage = () => {
-  const { user, logout } = useAuth(); // Get user and logout from context
-  const [conversationId, setConversationId] = useState(null);
+  const { user, isAuthenticated, logout } = useAuth();
   const [language, setLanguage] = useState('en-US'); 
   const [isMuted, setIsMuted] = useState(false);
   const [appState, setAppState] = useState('IDLE');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // Token is managed by AuthProvider/sessionStorage, but socket hook might need it directly
-  // or we can pass it.
+  // --- Conversations Logic ---
+  const { 
+    conversations, 
+    activeId, 
+    createConversation, 
+    selectConversation,
+    fetchConversations
+  } = useConversations(isAuthenticated);
+
+  // Token for socket
   const token = sessionStorage.getItem('access_token');
 
-  // Hooks
+  // --- Socket Chat Logic ---
   const { 
-    socket, status, messages, streamingResponse, isGenerating, sendMessage, cancelGeneration 
-  } = useSocketChat(token, conversationId);
+    socket, status, messages, streamingResponse, isGenerating, sendMessage, cancelGeneration, setMessages 
+  } = useSocketChat(token, activeId); // Pass activeId (conversationId)
 
+  // --- Speech Logic ---
   const { 
-    isListening, transcript, startListening, stopListening, hasSupport: sttSupport 
+    isListening, transcript, startListening, stopListening 
   } = useSpeechRecognition(language);
 
   const { 
-    isSpeaking, speak, stopSpeaking, hasSupport: ttsSupport 
+    isSpeaking, speak, stopSpeaking 
   } = useSpeechSynthesis(language);
 
-  // --- Session Init ---
+  // --- Effect: Fetch Messages when Active Conversation Changes ---
   useEffect(() => {
-    const initSession = async () => {
-      if (!conversationId && token) {
+    const loadMessages = async () => {
+      if (activeId && isAuthenticated) {
         try {
-          // Use the api helper which attaches the token automatically
-          const res = await api.post('/conversations');
-          if (res.data.conversation_id) setConversationId(res.data.conversation_id);
+          const res = await api.get(`/conversations/${activeId}`);
+          // The socket hook expects messages in a specific format?
+          // useSocketChat uses { role, text, timestamp }
+          // Backend returns: [{ role, content, language, created_at }] based on routes/chat.py
+          // Let's map it.
+          const mapped = (res.data || []).map(m => ({
+            role: m.role,
+            text: m.content,
+            timestamp: new Date(m.created_at)
+          }));
+          setMessages(mapped);
         } catch (e) {
-          console.error("Failed to init conversation", e);
+          console.error("Failed to load messages", e);
         }
+      } else {
+        setMessages([]); // Clear if no active ID
       }
     };
-    initSession();
-  }, [token, conversationId]);
+    loadMessages();
+  }, [activeId, isAuthenticated, setMessages]); // setMessages needs to be stable or exposed by hook
+
+  // --- Effect: Create initial conversation if list is empty on load ---
+  useEffect(() => {
+    // If we have loaded conversations, but none active, and list is empty => create new
+    // If list is not empty, maybe select the first one?
+    // Let's rely on user action mostly, but good UX is to have one ready.
+    if (isAuthenticated && conversations.length === 0 && !activeId) {
+        // Only create if we are sure we fetched. 
+        // We can add a 'loading' check from useConversations if we export it.
+        // For now let's just leave it empty or user clicks "New Chat". 
+        // Actually the previous logic auto-created one. Let's keep that behavior but via the hook.
+        // createConversation(); // This might cause double create on mount due to React.StrictMode.
+        // Let's show "No chats" state instead.
+    } else if (isAuthenticated && conversations.length > 0 && !activeId) {
+        // Select the most recent one automatically
+        selectConversation(conversations[0].id);
+    }
+  }, [isAuthenticated, conversations, activeId, createConversation, selectConversation]);
 
 
   // --- State Synchronization (Same as before) ---
@@ -73,16 +112,17 @@ export const ChatPage = () => {
   useEffect(() => {
     if (!isGenerating && appState === 'THINKING' && messages.length > 0) {
         const lastMsg = messages[messages.length - 1];
-        console.log(messages)
         if (lastMsg.role === 'assistant') {
             if (!isMuted) {
                 speak(lastMsg.text);
             } else {
                 setAppState('IDLE');
             }
+            // Also refresh conversation list to update timestamps/order
+            fetchConversations();
         }
     }
-  }, [isGenerating, appState, messages, isMuted, speak]);
+  }, [isGenerating, appState, messages, isMuted, speak, fetchConversations]);
 
   useEffect(() => {
     if (isSpeaking) {
@@ -108,30 +148,60 @@ export const ChatPage = () => {
     setAppState('IDLE');
   };
 
-  return (
-    <div className="min-h-screen w-full bg-slate-900 text-white font-sans selection:bg-purple-500/30 overflow-hidden relative">
-      <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900 z-0" />
-      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-indigo-600/20 rounded-full blur-[120px]" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[120px]" />
+  const handleCreateNewChat = async () => {
+    if (isGenerating) cancelGeneration();
+    stopSpeaking();
+    stopListening();
+    setAppState('IDLE');
+    await createConversation();
+  };
 
-      <div className="relative z-10 flex flex-col  max-w-4xl mx-auto">
+  return (
+    <div className="flex h-screen w-full bg-slate-900 text-white font-sans selection:bg-purple-500/30 overflow-hidden relative">
+      
+      {/* Background Ambience (Global) */}
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-purple-900/20 to-slate-900 z-0 pointer-events-none" />
+      
+      {/* Sidebar */}
+      <Sidebar 
+        isOpen={isSidebarOpen} 
+        setIsOpen={setIsSidebarOpen} 
+        conversations={conversations} 
+        activeId={activeId} 
+        onSelect={(id) => {
+            if (isGenerating) cancelGeneration();
+            selectConversation(id);
+        }}
+        onCreateNew={handleCreateNewChat}
+      />
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col relative z-10 h-full">
         
-        {/* Header with User Profile */}
-        <header className="flex items-center justify-between px-6 py-6">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-purple-500 animate-pulse" />
-            <span className="font-bold text-lg tracking-widest text-white/80">EMOTICARE</span>
+        {/* Header */}
+        <header className="flex items-center justify-between px-6 py-4 border-b border-white/5 backdrop-blur-sm">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setIsSidebarOpen(true)}
+              className="md:hidden text-white/70 hover:text-white p-1"
+            >
+              <Menu size={24} />
+            </button>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+              <span className="font-bold text-lg tracking-widest text-white/80">AURALIS</span>
+            </div>
           </div>
           
           <div className="flex items-center gap-4">
-             <div className={`text-xs px-3 py-1 rounded-full border hidden sm:block ${status === 'connected' ? 'border-green-500/30 text-green-400 bg-green-500/10' : 'border-red-500/30 text-red-400'}`}>
+             <div className={`text-[10px] px-2 py-0.5 rounded-full border hidden sm:block ${status === 'connected' ? 'border-green-500/30 text-green-400 bg-green-500/10' : 'border-red-500/30 text-red-400'}`}>
                 {status === 'connected' ? 'ONLINE' : 'OFFLINE'}
              </div>
 
              <div className="flex items-center gap-3 pl-4 border-l border-white/10">
                 <div className="flex items-center gap-2 text-white/70 text-sm">
                     <User size={16} />
-                    <span className="hidden sm:inline">{user?.email}</span>
+                    <span className="hidden sm:inline max-w-[100px] truncate">{user?.email}</span>
                 </div>
                 <button onClick={logout} className="p-2 hover:bg-white/10 rounded-full text-white/50 hover:text-white transition-colors" title="Sign Out">
                     <LogOut size={18} />
@@ -140,24 +210,49 @@ export const ChatPage = () => {
           </div>
         </header>
 
-        <main className="flex-1 flex flex-col items-center justify-center relative">
-          <div className={`transition-all duration-700 ease-in-out ${messages.length > 0 ? 'scale-75 -translate-y-4' : 'scale-100'}`}>
-            <VoiceOrb state={appState} />
-          </div>
+        {/* Chat Area */}
+        <main className="flex-1 flex flex-col items-center justify-center relative overflow-hidden">
+          
+          {/* Ambient Orbs for Main Area */}
+          <div className="absolute top-[10%] left-[10%] w-[400px] h-[400px] bg-indigo-600/10 rounded-full blur-[100px] pointer-events-none" />
+          <div className="absolute bottom-[10%] right-[10%] w-[400px] h-[400px] bg-purple-600/10 rounded-full blur-[100px] pointer-events-none" />
 
-          <div className="h-8 mt-4 mb-2 text-center">
-            <p className="text-indigo-200/60 text-sm font-medium tracking-widest uppercase animate-fade-in">
-              {appState === 'IDLE' ? 'Ready' : appState}
-            </p>
-          </div>
-          <TranscriptPanel 
-            messages={messages} 
-            streamingResponse={streamingResponse} 
-            isGenerating={isGenerating} 
-          />
+          {activeId ? (
+            <>
+                <div className={`transition-all duration-700 ease-in-out ${messages.length > 0 ? 'scale-75 -translate-y-4' : 'scale-100'} mt-4`}>
+                    <VoiceOrb state={appState} />
+                </div>
+
+                <div className="h-6 mb-2 text-center">
+                    <p className="text-indigo-200/60 text-sm font-medium tracking-widest uppercase animate-fade-in">
+                    {appState === 'IDLE' ? 'Ready' : appState}
+                    </p>
+                </div>
+
+                <TranscriptPanel 
+                    messages={messages} 
+                    streamingResponse={streamingResponse} 
+                    isGenerating={isGenerating} 
+                />
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-white/30 space-y-4">
+                <div className="w-16 h-16 rounded-full border-2 border-white/10 flex items-center justify-center">
+                    <MessageSquare size={32} />
+                </div>
+                <p>Select a conversation or start a new one.</p>
+                <button 
+                    onClick={handleCreateNewChat}
+                    className="px-6 py-2 bg-purple-600/20 hover:bg-purple-600/40 text-purple-300 rounded-full text-sm font-medium transition-colors"
+                >
+                    Start New Chat
+                </button>
+            </div>
+          )}
         </main>
 
-        <footer className="px-6 pb-6 pt-2">
+        {/* Footer Controls */}
+        <footer className="px-6 pb-6 pt-2 z-20">
           <ControlDock 
             state={appState}
             language={language}
@@ -168,17 +263,12 @@ export const ChatPage = () => {
             isMuted={isMuted}
             toggleMute={() => setIsMuted(!isMuted)}
           />
-          
-          <div className="text-center">
-            <p className="text-[10px] text-white/20 flex items-center justify-center gap-2">
-              <span>🔒 Encrypted End-to-End</span>
-              <span>•</span>
-              <span>Auto-deletes in 30 days</span>
-            </p>
-          </div>
         </footer>
 
       </div>
     </div>
   );
 };
+
+// Helper for empty state icon
+import { MessageSquare } from 'lucide-react';

@@ -35,7 +35,7 @@ export const LoginPage = () => {
         <div className="mb-8 text-center">
           <div className="inline-flex items-center gap-2 mb-4">
             <div className="w-3 h-3 rounded-full bg-purple-500 animate-pulse" />
-            <span className="font-bold text-xl tracking-widest text-white/90">EMOTICARE</span>
+            <span className="font-bold text-xl tracking-widest text-white/90">AURALIS</span>
           </div>
           <h1 className="text-3xl font-light text-white mb-2">Welcome Back</h1>
           <p className="text-white/40 text-sm">Sign in to access your secure wellness companion.</p>

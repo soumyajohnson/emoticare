@@ -125,6 +125,7 @@ export const useSocketChat = (token, conversationId) => {
     socket,
     status,
     messages,
+    setMessages, // Exporting this
     streamingResponse,
     isGenerating,
     sendMessage,
