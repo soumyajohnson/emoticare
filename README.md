@@ -1,10 +1,10 @@
 # EmotiCare - AI Mental Health Assistant
 
-A secure, bilingual (English/Hindi) voice-enabled mental health chatbot.
+A secure, bilingual (English/Hindi) voice-enabled mental health chatbot with **Real-Time Streaming**.
 
 ## Features
 - **Voice Interaction:** Speak to the bot and hear responses.
-- **Empathetic AI:** Powered by **Google Gemini (gemini-2.5-flash)** for high-quality, privacy-conscious responses.
+- **Real-Time AI:** Responses stream character-by-character using **Google Gemini (gemini-2.5-flash)** via WebSockets.
 - **Secure:** Production-grade authentication and encryption.
 - **Privacy:** User data is encrypted at rest and can be deleted on demand.
 
@@ -12,21 +12,19 @@ A secure, bilingual (English/Hindi) voice-enabled mental health chatbot.
 
 ### 1. Authentication
 - **Method:** JWT (JSON Web Tokens) with expiration.
-- **Storage:** Passwords are hashed using `bcrypt` (work factor 12+).
+- **Storage:** Passwords are hashed using `bcrypt`.
 - **Protection:** Rate limiting prevents brute-force attacks.
 
 ### 2. Data Storage & Encryption
-- **Database:** MongoDB (NoSQL) stores structured conversation data.
+- **Database:** MongoDB (NoSQL).
 - **Encryption at Rest:** Envelope Encryption pattern.
-  - Each message is encrypted with a unique **Data Key (DK)** (Fernet/AES-128-CBC).
-  - The DK is encrypted with a **Master Key (MK)** stored in the environment.
-  - Only encrypted blobs are stored in the database.
-- **No Plaintext Logging:** Logging is sanitized to exclude user message content.
+  - Each message is encrypted with a unique **Data Key**.
+  - Only encrypted blobs are stored.
+- **No Plaintext Logging:** Logs are sanitized.
 
-### 3. Privacy Controls
-- **Retention:** Messages have a TTL (Time-To-Live) index for auto-deletion (default 30 days).
-- **Right to be Forgotten:** `/privacy/delete-my-data` endpoint permanently removes all user records.
-- **Audit Logs:** Sensitive actions (Login, Register, Delete Data) are logged for security audits.
+### 3. Streaming & Privacy
+- **WebSockets:** Used for real-time communication (Socket.IO).
+- **Transient Processing:** User text is processed in memory for the LLM stream and encrypted immediately for storage. No intermediate plaintext logs.
 
 ## Setup
 
@@ -45,13 +43,9 @@ A secure, bilingual (English/Hindi) voice-enabled mental health chatbot.
 3. Configure environment:
    - Copy `.env.example` to `.env`.
    - Update `MONGODB_HOST`.
-   - **Important:** Generate an encryption master key:
-     ```python
-     from cryptography.fernet import Fernet
-     print(Fernet.generate_key().decode())
-     ```
-     Paste this value into `.env` as `ENCRYPTION_MASTER_KEY`.
-   - Set your `GEMINI_API_KEY` (Get one from [Google AI Studio](https://aistudio.google.com/)).
+   - Generate `ENCRYPTION_MASTER_KEY` (see below).
+   - Set `GEMINI_API_KEY`.
+   - Verify `GEMINI_MODEL=gemini-2.5-flash`.
 4. Run the server:
    ```bash
    python run.py
@@ -59,15 +53,29 @@ A secure, bilingual (English/Hindi) voice-enabled mental health chatbot.
 
 ### 2. Frontend Setup
 1. Navigate to `client/`.
-2. Install dependencies: `npm install`.
-3. Start React: `npm start`.
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Start React:
+   ```bash
+   npm start
+   ```
 
 ## API Endpoints
 
 - `POST /auth/register`: Create account.
 - `POST /auth/login`: Get JWT.
-- `POST /chat`: Send encrypted message, get encrypted reply (via Gemini).
-- `DELETE /privacy/delete-my-data`: Wipe data.
+- `POST /conversations`: Create a new session.
+- **WebSocket Events**:
+  - `join_session`: Join a chat room.
+  - `user_message`: Send text -> streams `assistant_token`.
+
+## Key Generation
+```python
+from cryptography.fernet import Fernet
+print(Fernet.generate_key().decode())
+```
 
 ## License
 MIT

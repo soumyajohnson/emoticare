@@ -14,3 +14,5 @@ mongoengine==0.27.0
 pymongo<4.0.0
 mongomock==4.1.2
 pytest==7.4.3
+flask-socketio==5.3.6
+simple-websocket==1.0.0

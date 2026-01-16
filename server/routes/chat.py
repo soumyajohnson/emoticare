@@ -92,9 +92,7 @@ def chat():
     # 2. Call AI (No logging of plaintext!)
     try:
         llm_client = LLMClient()
-        #gpt_response = llm_client.generate_reply(message_text, language)
-        gpt_response="working fine"
-        print(gpt_response)
+        gpt_response = llm_client.generate_reply(message_text, language)
     except Exception as e:
         return jsonify({'error': 'AI Service Error'}), 500
 

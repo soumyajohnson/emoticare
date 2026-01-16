@@ -1,25 +1,24 @@
-const VoiceInput = ({ onResponse, language }) => {
-  const handleClick = async () => {
-    const recognition = new window.webkitSpeechRecognition();
+import React from 'react';
+
+const VoiceInput = ({ onMessage, language }) => {
+  const handleClick = () => {
+    // Check browser support
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Browser does not support Speech Recognition");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
     recognition.lang = language;
     recognition.start();
 
-    recognition.onresult = async (event) => {
+    recognition.onresult = (event) => {
       const transcript = event.results[0][0].transcript;
       console.log("You said:", transcript);
-
-      try {
-        const res = await fetch('http://localhost:8000/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: transcript, language })
-        });
-
-        const data = await res.json();
-        onResponse(transcript, data.response);
-      } catch (error) {
-        console.error("Failed to fetch:", error);
-      }
+      
+      // Send text to parent instead of fetch
+      onMessage(transcript);
     };
 
     recognition.onerror = (err) => {

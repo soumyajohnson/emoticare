@@ -1,7 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from server.config import Config
-from server.extensions import bcrypt, jwt, limiter
+from server.extensions import bcrypt, jwt, limiter, socketio
 from server.models import db
 from server.routes.auth import auth_bp
 from server.routes.chat import chat_bp
@@ -16,6 +16,7 @@ def create_app(config_class=Config):
     jwt.init_app(app)
     db.init_app(app)
     limiter.init_app(app)
+    socketio.init_app(app)
     
     # CORS: Allow frontend (e.g., localhost:3000)
     CORS(app, resources={r"/*": {"origins": ["http://localhost:3000"]}}, supports_credentials=True)
@@ -25,6 +26,9 @@ def create_app(config_class=Config):
     app.register_blueprint(chat_bp)
     app.register_blueprint(privacy_bp)
 
+    # Register Socket Events
+    import server.sockets
+
     @app.route('/')
     def index():
         return "EmotiCare API Secure is Running"
@@ -33,4 +37,4 @@ def create_app(config_class=Config):
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=8000, debug=True)
